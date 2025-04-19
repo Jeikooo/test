@@ -1,530 +1,101 @@
---[[
-    Enhanced Toolkit - Rewritten Version 4.2 (Robustness + Fixes)
+-- Crea la UI de la ventana del plugin
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-    - Aimbot: Añadidos prints de depuración detallados para diagnosticar falta de auto-apuntado.
-    - Fly: Reimplementado usando BodyVelocity para un vuelo más libre y sostenido.
-    - ESP: Añadidos prints de depuración detallados y pcalls internos para diagnosticar la falta de visuales.
-    - Mantiene pcalls generales para robustez.
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LegitAimbotHub"
+screenGui.Parent = playerGui
 
-    ADVERTENCIA: Uso bajo tu propio riesgo. Puede causar baneo.
-]]
-print("Enhanced Toolkit [v4.2]: Iniciando carga...")
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0.2, 0, 0.4, 0)
+frame.Position = UDim2.new(0.8, 0, 0.6, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BackgroundTransparency = 0.2
+frame.BorderSizePixel = 2
+frame.Parent = screenGui
 
--- Wrap global para atrapar errores muy tempranos
-local mainSuccess, mainError = pcall(function()
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = "Aimbot Hub"
+titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
+titleLabel.TextSize = 20
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = frame
 
-    -- =============================================================================
-    -- Servicios y Variables Iniciales
-    -- =============================================================================
-    local Players = game:GetService("Players")
-    local UserInputService = game:GetService("UserInputService")
-    local RunService = game:GetService("RunService")
-    local TweenService = game:GetService("TweenService")
-    local Workspace = game:GetService("Workspace")
-    print("Enhanced Toolkit: Servicios obtenidos.")
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0.8, 0, 0.2, 0)
+toggleButton.Position = UDim2.new(0.1, 0, 0.3, 0)
+toggleButton.Text = "Aimbot: OFF"
+toggleButton.TextSize = 16
+toggleButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Parent = frame
 
-    local localPlayer = Players.LocalPlayer
-    if not localPlayer then warn("Enhanced Toolkit: ERROR CRÍTICO - No se encontró LocalPlayer."); return end
-    print("Enhanced Toolkit: LocalPlayer:", localPlayer.Name)
+local smoothnessLabel = Instance.new("TextLabel")
+smoothnessLabel.Text = "Smoothness: 0.1"
+smoothnessLabel.Size = UDim2.new(1, 0, 0.2, 0)
+smoothnessLabel.Position = UDim2.new(0, 0, 0.6, 0)
+smoothnessLabel.TextSize = 16
+smoothnessLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+smoothnessLabel.BackgroundTransparency = 1
+smoothnessLabel.Parent = frame
 
-    local playerGui = localPlayer:WaitForChild("PlayerGui", 60)
-    if not playerGui then warn("Enhanced Toolkit: ERROR CRÍTICO - No se encontró PlayerGui."); return end
-    print("Enhanced Toolkit: PlayerGui encontrado.")
+-- Variables del Aimbot
+getgenv().AimlockEnabled = false
+getgenv().AimRadius = 50 -- Rango de detección
+getgenv().AimPart = "Head" -- Parte objetivo
+getgenv().SmoothnessAmount = 0.1 -- Suavidad (más bajo = más rápido, más alto = más suave)
 
-    local Camera = Workspace.CurrentCamera
-    if not Camera then warn("Enhanced Toolkit: ERROR CRÍTICO - No se encontró Cámara."); return end
-    print("Enhanced Toolkit: Cámara encontrada.")
+-- Activar/Desactivar Aimbot
+toggleButton.MouseButton1Click:Connect(function()
+    getgenv().AimlockEnabled = not getgenv().AimlockEnabled
+    toggleButton.Text = getgenv().AimlockEnabled and "Aimbot: ON" or "Aimbot: OFF"
+    toggleButton.BackgroundColor3 = getgenv().AimlockEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+end)
 
-    -- =============================================================================
-    -- ScreenGui Principal
-    -- =============================================================================
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "EnhancedToolkit_v4_2_Main"
-    screenGui.ResetOnSpawn = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent = playerGui -- Padre más seguro
-    print("Enhanced Toolkit: ScreenGui creado y parentado a PlayerGui.")
+-- Encontrar el objetivo más cercano
+local function getNearestTarget()
+    local players = game:GetService("Players"):GetPlayers()
+    local closestPlayer
+    local shortestDistance = getgenv().AimRadius
 
-    -- =============================================================================
-    -- Tabla de Configuración Central (Settings)
-    -- =============================================================================
-    local settings = {
-        -- Aimbot Settings
-        aimbotEnabled=false, aimRadius=100, aimPart="Nearest", smoothness=0.2, aimbotFOVVisible=true,
-        aimbotFOVRainbow=false, aimbotWallcheck=true, aimbotToggleKeybind=Enum.KeyCode.F,
-        -- ESP Settings (Integrados y Expandidos)
-        espEnabled=true, espMaxDistance=500, espVisibleOnly=true, espTeamCheck="Enemies",
-        espShowBoxes=false, espShowCorners=true, espShowSkeleton=false, espShowHighlight=false,
-        espShowTracers=true, espShowNames=true, espShowHealth=true, espShowDistance=true,
-        espEnemyColor=Color3.fromRGB(255,60,60), espAllyColor=Color3.fromRGB(60,255,60),
-        espNeutralColor=Color3.fromRGB(255,255,60), espHighlightFillColor=Color3.fromRGB(255,60,60),
-        espHighlightOutlineColor=Color3.fromRGB(255,255,255), espHighlightFillTransparency=0.8,
-        espHighlightOutlineTransparency=0.5, espHighlightDepthMode=Enum.HighlightDepthMode.Occluded,
-        espBoxTransparency=0.7, espSkeletonThickness=1, espTracerThickness=1,
-        -- Fly Settings
-        flyEnabled=false, flySpeed=50, flyKeybind=Enum.KeyCode.X, -- Reducida velocidad inicial para BodyVelocity
-        -- Speed Settings
-        speedEnabled=false, speedMultiplier=3, speedKeybind=Enum.KeyCode.C,
-        -- Hub State
-        hubVisible=true, hubMinimized=false
-    }
-    local aimbotNearestParts = {"Head", "UpperTorso", "HumanoidRootPart", "LowerTorso", "LeftUpperLeg", "RightUpperLeg"}
-    print("Enhanced Toolkit: Configuración definida.")
+    for _, player in pairs(players) do
+        if player ~= game.Players.LocalPlayer and player.Character and player.Character:FindFirstChild(getgenv().AimPart) then
+            local partPosition = player.Character[getgenv().AimPart].Position
+            local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(partPosition)
 
-    -- =============================================================================
-    -- Funciones de Utilidad UI (Definidas Temprano)
-    -- =============================================================================
-    -- ... (Incluir aquí TODAS las funciones UI de v4.1: createUIObject, showNotification, createToggle, etc.) ...
-    local function createUIObject(type, properties, cornerRadiusValue) local object = Instance.new(type); for key, value in pairs(properties) do pcall(function() object[key] = value end) end; if cornerRadiusValue and cornerRadiusValue > 0 then local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, cornerRadiusValue); corner.Parent = object end; return object end
-    local notificationQueue = {}; local isShowingNotification = false
-    local function showNotification(message, color) table.insert(notificationQueue, { message = message, color = color }); if isShowingNotification then return end; task.spawn(function() local succ, err = pcall(function() isShowingNotification = true; while #notificationQueue > 0 do local notificationData = table.remove(notificationQueue, 1); local msg = notificationData.message; local clr = notificationData.color or Color3.fromRGB(50, 50, 50); local notificationFrame = createUIObject("Frame", { Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.05, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundColor3 = clr, BackgroundTransparency = 0.2, BorderSizePixel = 0, Parent = screenGui, ZIndex = 10 }, 4); local shadowLabel = createUIObject("TextLabel", { Size = UDim2.new(1, -10, 1, -6), Position = UDim2.new(0, 6, 0, 4), Font = Enum.Font.SourceSansSemibold, Text = msg, TextSize = 14, TextColor3 = Color3.new(0,0,0), TextTransparency = 0.5, BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center, Parent = notificationFrame, ZIndex = 1 }); local notificationLabel = createUIObject("TextLabel", { Size = UDim2.new(1, -10, 1, -6), Position = UDim2.new(0, 5, 0, 3), Font = Enum.Font.SourceSansSemibold, Text = msg, TextSize = 14, TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center, Parent = notificationFrame, ZIndex = 2 }); local targetWidth = notificationLabel.TextBounds.X + 20; local tweenInfoIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out); local sizeTweenIn = TweenService:Create(notificationFrame, tweenInfoIn, { Size = UDim2.new(0, targetWidth, 0, 40) }); sizeTweenIn:Play(); sizeTweenIn.Completed:Wait(); task.wait(2.5); local tweenInfoOut = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out); local fadeTweenOut = TweenService:Create(notificationFrame, tweenInfoOut, { BackgroundTransparency = 1 }); local labelFadeTweenOut = TweenService:Create(notificationLabel, tweenInfoOut, { TextTransparency = 1 }); local shadowFadeTweenOut = TweenService:Create(shadowLabel, tweenInfoOut, { TextTransparency = 1 }); fadeTweenOut:Play(); labelFadeTweenOut:Play(); shadowFadeTweenOut:Play(); fadeTweenOut.Completed:Connect(function() pcall(function() notificationFrame:Destroy() end) end); task.wait(0.5) end; isShowingNotification = false end); if not succ then warn("Error en showNotification:", err) end end) end
-    local function createToggle(parent, config) local button = createUIObject("TextButton", { Size = UDim2.new(0.9, 0, 0, 30), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), Font = Enum.Font.SourceSansSemibold, Text = config.settingName .. ": " .. (settings[config.settingKey] and "ON" or "OFF"), TextSize = 14, TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundColor3 = settings[config.settingKey] and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0), Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "Toggle" }, 4); button.MouseButton1Click:Connect(function() local succ, err = pcall(function() settings[config.settingKey] = not settings[config.settingKey]; button.Text = config.settingName .. ": " .. (settings[config.settingKey] and "ON" or "OFF"); button.BackgroundColor3 = settings[config.settingKey] and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0); showNotification(config.settingName .. (settings[config.settingKey] and " Enabled" or " Disabled"), button.BackgroundColor3); if config.updateCallback then config.updateCallback() end end); if not succ then warn("Error en Toggle Click:", err) end end); return button end
-    local function createCheckbox(parent, config) local button = createUIObject("TextButton", { Size = UDim2.new(0.9, 0, 0, 30), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), Font = Enum.Font.SourceSansSemibold, Text = (settings[config.settingKey] and "[X] " or "[ ] ") .. config.settingName, TextSize = 14, TextColor3 = Color3.fromRGB(220, 220, 220), BackgroundColor3 = Color3.fromRGB(60, 60, 60), TextXAlignment = Enum.TextXAlignment.Left, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "Checkbox" }, 4); local padding = Instance.new("UITextPadding"); padding.PaddingLeft = UDim.new(0,10); padding.Parent = button; button.MouseButton1Click:Connect(function() local succ,err=pcall(function() settings[config.settingKey] = not settings[config.settingKey]; button.Text = (settings[config.settingKey] and "[X] " or "[ ] ") .. config.settingName; if config.updateCallback then config.updateCallback() end end);if not succ then warn("Error en Checkbox Click:",err) end end); return button end
-    local function createSlider(parent, config) local container = createUIObject("Frame", { Size = UDim2.new(0.9, 0, 0, 45), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundTransparency = 1, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "SliderContainer" }); local label = createUIObject("TextLabel", { Size = UDim2.new(1, 0, 0, 15), Position = UDim2.new(0, 0, 0, 0), Font = Enum.Font.SourceSansSemibold, TextSize = 12, TextColor3 = Color3.fromRGB(200, 200, 200), Text = config.settingName .. ": " .. string.format(config.format or "%.2f", settings[config.settingKey]), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = container, }); local track = createUIObject("Frame", { Size = UDim2.new(1, 0, 0, 8), Position = UDim2.new(0, 0, 0, 20), BackgroundColor3 = Color3.fromRGB(60, 60, 60), BorderSizePixel = 0, Parent = container, }, 4); local fillValue = 0; if (config.max - config.min) > 0 then fillValue = math.max(0,(settings[config.settingKey] - config.min)) / (config.max - config.min) end; local fill = createUIObject("Frame", { Size = UDim2.new(fillValue, 0, 1, 0), Position = UDim2.new(0,0,0,0), BackgroundColor3 = Color3.fromRGB(0, 150, 255), BorderSizePixel = 0, Parent = track, ZIndex = track.ZIndex + 1, }, 4); local thumb = createUIObject("TextButton", { Size = UDim2.new(0, 16, 0, 16), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(fill.Size.X.Scale, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(200, 200, 200), BorderSizePixel = 0, Text = "", Parent = track, ZIndex = track.ZIndex + 2, AutoButtonColor = false, }, 8); local dragging = false; thumb.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255) end end); thumb.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false; thumb.BackgroundColor3 = Color3.fromRGB(200, 200, 200) end end); local function updateSlider(input) if not dragging then return end; local succ,err=pcall(function() local mouseLocation = input.Position or UserInputService:GetMouseLocation(); local relativeX = mouseLocation.X - track.AbsolutePosition.X; local percentage = math.clamp(relativeX / track.AbsoluteSize.X, 0, 1); local value = config.min + percentage * (config.max - config.min); settings[config.settingKey] = value; fill.Size = UDim2.new(percentage, 0, 1, 0); thumb.Position = UDim2.new(percentage, 0, 0.5, 0); label.Text = config.settingName .. ": " .. string.format(config.format or "%.2f", value); if config.updateCallback then config.updateCallback() end end); if not succ then warn("Error en updateSlider:",err) end end; UserInputService.InputChanged:Connect(function(input) if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then updateSlider(input) end end); track.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255); updateSlider(input) end end); track.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false; thumb.BackgroundColor3 = Color3.fromRGB(200, 200, 200) end end); return container, label end
-    local function createDropdown(parent, config) local isOpen = false; local container = createUIObject("Frame", { Size = UDim2.new(0.9, 0, 0, 30), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundTransparency = 1, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "DropdownContainer", ClipsDescendants = false, ZIndex = 2 }); local currentSelectionButton = createUIObject("TextButton", { Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.SourceSansSemibold, Text = config.settingName .. ": " .. tostring(settings[config.settingKey]) .. " ▼", TextSize = 14, TextColor3 = Color3.fromRGB(220, 220, 220), BackgroundColor3 = Color3.fromRGB(60, 60, 60), Parent = container, Name = "CurrentSelectionButton" }, 4); local optionsFrame = createUIObject("ScrollingFrame", { Size = UDim2.new(1, 0, 0, math.min(#config.options * 25 + 5, 100)), Position = UDim2.new(0, 0, 1, 5), BackgroundColor3 = Color3.fromRGB(50, 50, 50), BorderSizePixel = 1, BorderColor3 = Color3.fromRGB(80, 80, 80), Parent = container, Visible = false, CanvasSize = UDim2.new(0,0,0,0), ScrollBarThickness = 5, ZIndex = 3 }, 4); local optionsLayout = Instance.new("UIListLayout"); optionsLayout.Padding = UDim.new(0, 2); optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder; optionsLayout.Parent = optionsFrame; currentSelectionButton.MouseButton1Click:Connect(function() local succ,err=pcall(function()isOpen = not isOpen; optionsFrame.Visible = isOpen; currentSelectionButton.Text = config.settingName .. ": " .. tostring(settings[config.settingKey]) .. (isOpen and " ▲" or " ▼"); if isOpen then local currentHeight = math.min(#config.options * 25 + 5, 100); container.Size = UDim2.new(0.9, 0, 0, 35 + currentHeight); optionsFrame.Size = UDim2.new(1,0,0,currentHeight) else container.Size = UDim2.new(0.9, 0, 0, 30) end end); if not succ then warn("Error en Dropdown Click:",err) end end); for i, optionText in ipairs(config.options) do local optionButton = createUIObject("TextButton", { Size = UDim2.new(1, -10, 0, 25), Position = UDim2.new(0,0,0,0), Font = Enum.Font.SourceSans, Text = "  " .. tostring(optionText), TextSize = 13, TextColor3 = Color3.fromRGB(200, 200, 200), BackgroundColor3 = Color3.fromRGB(70, 70, 70), BackgroundTransparency = 0.1, TextXAlignment = Enum.TextXAlignment.Left, Parent = optionsFrame, LayoutOrder = i }, 2); optionButton.MouseEnter:Connect(function() optionButton.BackgroundColor3 = Color3.fromRGB(90, 90, 90) end); optionButton.MouseLeave:Connect(function() optionButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70) end); optionButton.MouseButton1Click:Connect(function() local succ,err=pcall(function()settings[config.settingKey] = optionText; isOpen = false; optionsFrame.Visible = false; currentSelectionButton.Text = config.settingName .. ": " .. tostring(settings[config.settingKey]) .. " ▼"; container.Size = UDim2.new(0.9, 0, 0, 30); if config.updateCallback then config.updateCallback() end end);if not succ then warn("Error en Option Click:",err) end end) end; UserInputService.InputBegan:Connect(function(input) if isOpen and input.UserInputType == Enum.UserInputType.MouseButton1 then local mousePos = UserInputService:GetMouseLocation(); local guiObjects = playerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y); local clickedInside = false; for _, obj in ipairs(guiObjects) do if obj:IsDescendantOf(container) then clickedInside = true; break end end; if not clickedInside then isOpen = false; optionsFrame.Visible = false; currentSelectionButton.Text = config.settingName .. ": " .. tostring(settings[config.settingKey]) .. " ▼"; container.Size = UDim2.new(0.9, 0, 0, 30) end end end); return container end
-    local function createTextInput(parent, config) local container = createUIObject("Frame", { Size = UDim2.new(0.9, 0, 0, 45), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundTransparency = 1, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "InputContainer" }); local label = createUIObject("TextLabel", { Size = UDim2.new(1, 0, 0, 15), Position = UDim2.new(0, 0, 0, 0), Font = Enum.Font.SourceSansSemibold, Text = config.settingName .. ":", TextSize = 12, TextColor3 = Color3.fromRGB(200, 200, 200), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = container, }); local textBox = createUIObject("TextBox", { Size = UDim2.new(1, 0, 0, 25), Position = UDim2.new(0, 0, 0, 18), Font = Enum.Font.SourceSans, Text = tostring(settings[config.settingKey]), TextSize = 14, TextColor3 = Color3.fromRGB(240, 240, 240), BackgroundColor3 = Color3.fromRGB(60, 60, 60), ClearTextOnFocus = false, Parent = container, Name = config.settingKey .. "Input" }, 4); local padding = Instance.new("UITextPadding"); padding.PaddingLeft = UDim.new(0, 5); padding.PaddingRight = UDim.new(0, 5); padding.Parent = textBox; textBox.FocusLost:Connect(function(enterPressed) if enterPressed then local succ,err=pcall(function() local newValue; if config.valueType == "number" then newValue = tonumber(textBox.Text); if newValue ~= nil then if config.min ~= nil then newValue = math.max(config.min, newValue) end; if config.max ~= nil then newValue = math.min(config.max, newValue) end; settings[config.settingKey] = newValue; textBox.Text = tostring(newValue); if config.updateCallback then config.updateCallback() end; showNotification(config.settingName .. " set to " .. textBox.Text, Color3.fromRGB(0, 150, 255)) else textBox.Text = tostring(settings[config.settingKey]); showNotification("Invalid input for " .. config.settingName, Color3.fromRGB(255,0,0)) end elseif config.valueType == "color" then local nums = {}; for num in string.gmatch(textBox.Text, "%d+") do table.insert(nums, tonumber(num)) end; if #nums == 3 and nums[1] <= 255 and nums[2] <= 255 and nums[3] <= 255 then settings[config.settingKey] = Color3.fromRGB(nums[1], nums[2], nums[3]); textBox.Text = string.format("%d,%d,%d", nums[1], nums[2], nums[3]); if config.updateCallback then config.updateCallback(settings[config.settingKey]) end; showNotification(config.settingName .. " set", Color3.fromRGB(0, 150, 255)) else local currentColor = settings[config.settingKey]; textBox.Text = string.format("%d,%d,%d", math.floor(currentColor.R*255), math.floor(currentColor.G*255), math.floor(currentColor.B*255)); showNotification("Invalid color format (use R,G,B e.g., 255,0,0)", Color3.fromRGB(255,0,0)) end else settings[config.settingKey] = textBox.Text; if config.updateCallback then config.updateCallback() end; showNotification(config.settingName .. " set to " .. textBox.Text, Color3.fromRGB(0, 150, 255)) end end); if not succ then warn("Error en TextInput FocusLost:",err) end end end); return container, textBox end
-    local function createColorPreview(parent, config) local container = createUIObject("Frame", { Size = UDim2.new(0.9, 0, 0, 45), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundTransparency = 1, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "ColorContainer" }); local label = createUIObject("TextLabel", { Size = UDim2.new(1, 0, 0, 15), Position = UDim2.new(0, 0, 0, 0), Font = Enum.Font.SourceSansSemibold, Text = config.settingName .. ": (R,G,B)", TextSize = 12, TextColor3 = Color3.fromRGB(200, 200, 200), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = container, }); local previewFrame = createUIObject("Frame", { Size = UDim2.new(0.2, -5, 0, 25), Position = UDim2.new(0, 0, 0, 18), BackgroundColor3 = settings[config.settingKey], BorderSizePixel = 1, BorderColor3 = Color3.fromRGB(100,100,100), Parent = container, }, 4); local _, textBox = createTextInput(container, { settingKey = config.settingKey, settingName = "", valueType = "color", layoutOrder = 1, updateCallback = function(newColor) previewFrame.BackgroundColor3 = newColor; if config.updateCallback then config.updateCallback() end end }); textBox.Position = UDim2.new(0.2, 5, 0, 18); textBox.Size = UDim2.new(0.8, -5, 0, 25); local currentColor = settings[config.settingKey]; textBox.Text = string.format("%d,%d,%d", math.floor(currentColor.R*255), math.floor(currentColor.G*255), math.floor(currentColor.B*255)); return container, previewFrame, textBox end
-    local isBindingKey = false; local keybindButtonReference = nil; local keybindSettingKey = nil; local previousKeybind = nil
-    local function createKeybindSetter(parent, config) local container = createUIObject("Frame", { Size = UDim2.new(0.9, 0, 0, 30), Position = UDim2.new(0.5, 0, 0, 0), AnchorPoint = Vector2.new(0.5, 0), BackgroundTransparency = 1, Parent = parent, LayoutOrder = config.layoutOrder, Name = config.settingKey .. "KeybindContainer" }); local button = createUIObject("TextButton", { Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.SourceSansSemibold, Text = config.settingName .. ": [" .. settings[config.settingKey].Name .. "]", TextSize = 14, TextColor3 = Color3.fromRGB(220, 220, 220), BackgroundColor3 = Color3.fromRGB(60, 60, 60), Parent = container, Name = "KeybindButton" }, 4); button.MouseButton1Click:Connect(function() if isBindingKey then return end; isBindingKey = true; keybindButtonReference = button; keybindSettingKey = config.settingKey; previousKeybind = settings[config.settingKey]; button.Text = config.settingName .. ": [Press Key...]"; button.BackgroundColor3 = Color3.fromRGB(80, 80, 40); showNotification("Press any key or mouse button (excluding scroll) to bind " .. config.settingName .. ", or Esc to cancel.", Color3.fromRGB(200, 200, 0)) end); return container, button end
-    print("Enhanced Toolkit: Funciones UI definidas.")
+            if onScreen then
+                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(game.Players.LocalPlayer:GetMouse().X, game.Players.LocalPlayer:GetMouse().Y)).Magnitude
 
-    -- =============================================================================
-    -- Estructura del HUB (Ventana, Título, Pestañas)
-    -- =============================================================================
-    local mainFrame, titleBar, contentFrame, aimbotTabFrame, visualsTabFrame, miscTabFrame
-    local tabs = {}; local currentTab = nil -- Mover definición de tabs aquí
-    local success_hub, err_hub = pcall(function() -- Envuelve la creación del HUB en pcall
-        mainFrame = createUIObject("Frame", { Size = UDim2.new(0, 450, 0, 450), Position = UDim2.new(0.5, -225, 0.5, -225), BackgroundColor3 = Color3.fromRGB(35, 35, 35), BackgroundTransparency = 0.1, BorderSizePixel = 0, Active = true, Visible = settings.hubVisible, Parent = screenGui, Name = "MainFrame", ClipsDescendants = true, }, 8)
-        titleBar = createUIObject("Frame", { Size = UDim2.new(1, 0, 0, 35), Position = UDim2.new(0, 0, 0, 0), BackgroundColor3 = Color3.fromRGB(25, 25, 25), BackgroundTransparency = 0, BorderSizePixel = 0, Parent = mainFrame, Name = "TitleBar", Active = true, }, 8)
-        local titleBarCornerFix = createUIObject("Frame", { Size = UDim2.new(1, 0, 0.5, 0), Position = UDim2.new(0,0,0.5,0), BackgroundColor3 = titleBar.BackgroundColor3, BorderSizePixel = 0, Parent = titleBar, ZIndex = titleBar.ZIndex - 1 })
-        local titleLabel = createUIObject("TextLabel", { Size = UDim2.new(0.6, 0, 1, 0), Position = UDim2.new(0.05, 0, 0, 0), Font = Enum.Font.SourceSansBold, Text = "Enhanced Toolkit v4.2", TextSize = 18, TextColor3 = Color3.fromRGB(220, 220, 220), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = titleBar, Name = "TitleLabel" })
-        local closeButton = createUIObject("TextButton", { Size = UDim2.new(0, 30, 0, 25), Position = UDim2.new(1, -35, 0.5, -12.5), AnchorPoint = Vector2.new(0, 0.5), Font = Enum.Font.SourceSansBold, Text = "X", TextSize = 16, TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundColor3 = Color3.fromRGB(200, 50, 50), BackgroundTransparency = 0, BorderSizePixel = 0, Parent = titleBar, Name = "CloseButton" }, 4)
-        local minimizeButton = createUIObject("TextButton", { Size = UDim2.new(0, 30, 0, 25), Position = UDim2.new(1, -70, 0.5, -12.5), AnchorPoint = Vector2.new(0, 0.5), Font = Enum.Font.SourceSansBold, Text = "-", TextSize = 20, TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundColor3 = Color3.fromRGB(70, 70, 70), BackgroundTransparency = 0, BorderSizePixel = 0, Parent = titleBar, Name = "MinimizeButton" }, 4)
-        contentFrame = createUIObject("Frame", { Size = UDim2.new(1, 0, 1, -35), Position = UDim2.new(0, 0, 0, 35), BackgroundTransparency = 1, Parent = mainFrame, Name = "ContentFrame", ClipsDescendants = true, })
-        local tabButtonFrame = createUIObject("Frame", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1, Parent = contentFrame, Name = "TabButtonFrame" })
-        local tabButtonLayout = Instance.new("UIListLayout"); tabButtonLayout.FillDirection = Enum.FillDirection.Horizontal; tabButtonLayout.SortOrder = Enum.SortOrder.LayoutOrder; tabButtonLayout.Padding = UDim.new(0, 5); tabButtonLayout.Parent = tabButtonFrame
-        local tabContentFrame = createUIObject("Frame", { Size = UDim2.new(1, -20, 1, -40), Position = UDim2.new(0, 10, 0, 35), BackgroundTransparency = 1, Parent = contentFrame, Name = "TabContentFrame" })
-
-        local function createTab(tabName, layoutOrder) local tabButton = createUIObject("TextButton", { Size = UDim2.new(0, 100, 1, 0), Font = Enum.Font.SourceSansSemibold, Text = tabName, TextSize = 14, TextColor3 = Color3.fromRGB(180, 180, 180), BackgroundColor3 = Color3.fromRGB(50, 50, 50), BackgroundTransparency = 0, BorderSizePixel = 0, LayoutOrder = layoutOrder, Parent = tabButtonFrame, Name = tabName .. "TabButton" }, 4); local tabFrame = createUIObject("ScrollingFrame", { Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = tabContentFrame, Name = tabName .. "TabFrame", Visible = false, CanvasSize = UDim2.new(0,0,0,0), ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(100,100,100), ScrollingDirection = Enum.ScrollingDirection.Y, }); local uiListLayout = Instance.new("UIListLayout"); uiListLayout.Padding = UDim.new(0, 10); uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder; uiListLayout.Parent = tabFrame; uiListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; tabs[tabName] = { button = tabButton, frame = tabFrame }; return tabFrame, tabButton end
-        local function switchTab(tabName) if not tabs[tabName] or currentTab == tabName then return end; for name, data in pairs(tabs) do if name == tabName then data.frame.Visible = true; data.button.TextColor3 = Color3.fromRGB(255, 255, 255); data.button.BackgroundColor3 = Color3.fromRGB(70, 70, 70); currentTab = name else data.frame.Visible = false; data.button.TextColor3 = Color3.fromRGB(180, 180, 180); data.button.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end end end
-        aimbotTabFrame, aimbotTabButton = createTab("Aimbot", 1)
-        visualsTabFrame, visualsTabButton = createTab("Visuals", 2)
-        miscTabFrame, miscTabButton = createTab("Misc", 3)
-        aimbotTabButton.MouseButton1Click:Connect(function() switchTab("Aimbot") end)
-        visualsTabButton.MouseButton1Click:Connect(function() switchTab("Visuals") end)
-        miscTabButton.MouseButton1Click:Connect(function() switchTab("Misc") end)
-    end)
-    if not success_hub then warn("Enhanced Toolkit: ERROR FATAL al crear estructura base del HUB - ", err_hub); return end
-    print("Enhanced Toolkit: Estructura del HUB creada.")
-
-    -- =============================================================================
-    -- Círculo FOV Aimbot
-    -- =============================================================================
-    local fovCircle = createUIObject("Frame", { Name = "AimbotFOVCircle", Size = UDim2.new(0, settings.aimRadius * 2, 0, settings.aimRadius * 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, BorderSizePixel = 1, BorderColor3 = Color3.fromRGB(255, 255, 255), Visible = false, Parent = screenGui, ZIndex = 1 })
-    local fovCircleCorner = Instance.new("UICorner"); fovCircleCorner.CornerRadius = UDim.new(1, 0); fovCircleCorner.Parent = fovCircle
-    local currentFovHue = 0
-    print("Enhanced Toolkit: FOV Circle creado.")
-
-    -- =============================================================================
-    -- Lógica y Variables del ESP Completo
-    -- =============================================================================
-    local espInstances = {}
-    local wallcheckParams = RaycastParams.new(); wallcheckParams.FilterType = Enum.RaycastFilterType.Exclude
-    local wallcheckIgnoreList = {}
-    local tracerHandle1 = nil
-    -- Funciones Helper ESP (getTeamStatus, isPositionVisible, cleanupPlayerESP)
-    local function getTeamStatus(targetPlayer) if not localPlayer or not targetPlayer or not localPlayer.Team or not targetPlayer.Team or localPlayer == targetPlayer then return "Neutral" end; if localPlayer.Team == targetPlayer.Team then return "Ally" else return "Enemy" end end
-    local function isPositionVisible(targetPosition, useEspWallcheckSetting) local checkSetting = useEspWallcheckSetting and settings.espVisibleOnly or settings.aimbotWallcheck; if not checkSetting then return true end; if not Camera then return false end; local origin = Camera.CFrame.Position; local direction = (targetPosition - origin).Unit; local distance = (targetPosition - origin).Magnitude; if distance < 0.1 then return true end; wallcheckIgnoreList = {}; if localPlayer.Character then table.insert(wallcheckIgnoreList, localPlayer.Character) end; wallcheckParams.FilterDescendantsInstances = wallcheckIgnoreList; local result = Workspace:Raycast(origin, direction * (distance + 0.1), wallcheckParams); if not result or (result.Position - targetPosition).Magnitude < 0.5 then return true else return false end end
-    local function cleanupPlayerESP(player) local data = espInstances[player]; if data then local succ, err = pcall(function() if data.Folder and data.Folder.Parent then data.Folder:Destroy() end end); if not succ then warn("Error destroying ESP folder:", err) end; if data.Connections then for _, conn in pairs(data.Connections) do pcall(conn.Disconnect, conn) end end; espInstances[player] = nil end end
-    -- Función Principal ESP (updateEspForPlayer - con prints internos para debug)
-    local function updateEspForPlayer(player)
-        local dbg_prefix = "ESP_Update[" .. player.Name .. "]: "
-        local updateSuccess, updateError = pcall(function()
-            if not settings.espEnabled then cleanupPlayerESP(player); return end
-            if player == localPlayer then return end
-            --print(dbg_prefix.."Checking...") -- Muy spammy, habilitar si es necesario
-
-            local character = player.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local rootPart = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
-            if not character or not humanoid or not rootPart or humanoid.Health <= 0 then
-                --print(dbg_prefix.."Cleanup - No char/humanoid/root or dead.")
-                cleanupPlayerESP(player); return
-            end
-
-            local playerRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if settings.espMaxDistance > 0 and playerRoot then
-                local dist = (rootPart.Position - playerRoot.Position).Magnitude
-                if dist > settings.espMaxDistance then
-                    --print(dbg_prefix.."Cleanup - Too far:", dist)
-                    cleanupPlayerESP(player); return
+                if distance < shortestDistance then
+                    closestPlayer = player
+                    shortestDistance = distance
                 end
             end
-
-            local teamStatus = getTeamStatus(player)
-            local shouldShow = (settings.espTeamCheck == "All") or (settings.espTeamCheck == "Enemies" and teamStatus == "Enemy") or (settings.espTeamCheck == "Allies" and teamStatus == "Ally")
-            if not shouldShow then
-                --print(dbg_prefix.."Cleanup - Team check failed:", teamStatus)
-                cleanupPlayerESP(player); return
-            end
-
-            if not isPositionVisible(rootPart.Position, true) then -- true = usa espVisibleOnly
-                 --print(dbg_prefix.."Cleanup - Not visible (Wallcheck).")
-                 cleanupPlayerESP(player); return
-            end
-
-            --print(dbg_prefix.."Passed checks. Updating visuals...") -- Spammy
-            local data = espInstances[player]
-            if not data then
-                print(dbg_prefix.."Creating NEW instance data.")
-                data = { Connections = {} }
-                if not screenGui or not screenGui.Parent then warn(dbg_prefix.."Cannot create Folder, ScreenGui not found!"); return end
-                data.Folder = Instance.new("Folder", screenGui)
-                data.Folder.Name = player.Name .. "_ESP_Data"
-                espInstances[player] = data
-                -- Conectar eventos (envueltos en pcall por si acaso)
-                local c1,e1 = pcall(function() table.insert(data.Connections, player.CharacterRemoving:Connect(function() cleanupPlayerESP(player) end)) end)
-                local c2,e2 = pcall(function() table.insert(data.Connections, humanoid.Died:Connect(function() cleanupPlayerESP(player) end)) end)
-                local c3,e3 = pcall(function() table.insert(data.Connections, humanoid.HealthChanged:Connect(function(newHealth) local s,e=pcall(function() if data and data.HealthLabel and data.HealthBarFill then local maxHealth = humanoid.MaxHealth; if maxHealth <= 0 then maxHealth = 100 end; local healthPercent = math.clamp(newHealth / maxHealth, 0, 1); local healthColor = Color3.fromHSV(healthPercent * 0.33, 1, 1); data.HealthLabel.Text = string.format("%d/%d", math.floor(newHealth), math.floor(maxHealth)); data.HealthLabel.TextColor3 = healthColor; data.HealthBarFill.Size = UDim2.new(healthPercent, 0, 1, 0); data.HealthBarFill.BackgroundColor3 = healthColor end end);if not s then warn("Error HealthChanged:",e) end end)) end)
-                if not c1 then warn(dbg_prefix.."Err conn CharRemoving:",e1) end
-                if not c2 then warn(dbg_prefix.."Err conn Died:",e2) end
-                if not c3 then warn(dbg_prefix.."Err conn HealthChanged:",e3) end
-            end
-
-            local espColor = settings.espNeutralColor; if teamStatus == "Enemy" then espColor = settings.espEnemyColor elseif teamStatus == "Ally" then espColor = settings.espAllyColor end
-            local espFolder = data.Folder; if not espFolder or not espFolder.Parent then return end
-
-            -- ## Cajas / Esquinas ##
-            if settings.espShowBoxes or settings.espShowCorners then
-                local s,e=pcall(function() if not data.Box then data.Box = Instance.new("BoxHandleAdornment", espFolder); data.Box.Adornee = rootPart; data.Box.AlwaysOnTop = true; data.Box.ZIndex = 1; data.Box.Size = Vector3.new(4, 6, 2); print(dbg_prefix.."Created Box") end; data.Box.Color3 = espColor; data.Box.Transparency = settings.espShowBoxes and settings.espBoxTransparency or 1; data.Box.Visible = true end); if not s then warn(dbg_prefix.."Err Box:",e) elseif data.Box and not data.Box.Parent then warn(dbg_prefix.."Box tiene padre nil!") end
-            elseif data.Box then pcall(data.Box.Destroy, data.Box); data.Box = nil; print(dbg_prefix.."Destroyed Box") end
-
-            -- ## Esqueleto ##
-            if settings.espShowSkeleton then
-                local s,e=pcall(function() if not data.SkeletonLines then data.SkeletonLines = {}; --[[ ... código crear lineas ... ]]; print(dbg_prefix.."Created SkeletonLines") end; for _, line in pairs(data.SkeletonLines or {}) do line.Color3 = espColor end end); if not s then warn(dbg_prefix.."Err Skeleton:",e) end
-            elseif data.SkeletonLines then local s,e=pcall(function() for _, line in pairs(data.SkeletonLines) do line:Destroy() end; data.SkeletonLines = nil; print(dbg_prefix.."Destroyed SkeletonLines") end); if not s then warn(dbg_prefix.."Err destroying Skeleton:",e) end end
-
-            -- ## Highlight ##
-            if settings.espShowHighlight then
-                local s,e=pcall(function() if not data.Highlight then data.Highlight = Instance.new("Highlight", espFolder); data.Highlight.Adornee = character; data.Highlight.DepthMode = settings.espHighlightDepthMode; print(dbg_prefix.."Created Highlight") end; local hfc = settings.espHighlightFillColor; if teamStatus == "Ally" then hfc = settings.espAllyColor end; data.Highlight.FillColor = hfc; data.Highlight.OutlineColor = settings.espHighlightOutlineColor; data.Highlight.FillTransparency = settings.espHighlightFillTransparency; data.Highlight.OutlineTransparency = settings.espHighlightOutlineTransparency; data.Highlight.Enabled = true end); if not s then warn(dbg_prefix.."Err Highlight:",e) end
-            elseif data.Highlight then data.Highlight.Enabled = false end
-
-            -- ## Tracers ##
-            if settings.espShowTracers then
-                local s,e=pcall(function() if not data.Tracer then data.Tracer = Instance.new("LineHandleAdornment", espFolder); data.Tracer.Adornee = rootPart; data.Tracer.Handle2 = rootPart; data.Tracer.Thickness = settings.espTracerThickness; data.Tracer.AlwaysOnTop = true; data.Tracer.ZIndex = 0; print(dbg_prefix.."Created Tracer") end; data.Tracer.Color3 = espColor; data.Tracer.Visible = true end); if not s then warn(dbg_prefix.."Err Tracer:",e) end
-            elseif data.Tracer then local s,e=pcall(function() data.Tracer:Destroy(); data.Tracer = nil; local th1 = espFolder:FindFirstChild("TracerHandle1"); if th1 then th1:Destroy() end; print(dbg_prefix.."Destroyed Tracer") end); if not s then warn(dbg_prefix.."Err destroying Tracer:",e) end end
-
-            -- ## Tags ## (Name, Health, Distance - similar pcall wrapping)
-            local tagYOffset = 2.5
-            -- Nombre
-            if settings.espShowNames then
-                local s,e=pcall(function() if not data.NameTag then data.NameTag = Instance.new("BillboardGui", espFolder); data.NameTag.Name = "NameTag"; data.NameTag.Adornee = rootPart; data.NameTag.Size = UDim2.new(0, 150, 0, 20); data.NameTag.AlwaysOnTop = true; data.NameTag.LightInfluence = 0; data.NameLabel = Instance.new("TextLabel", data.NameTag); data.NameLabel.Size = UDim2.new(1,0,1,0); data.NameLabel.Font = Enum.Font.SourceSansSemibold; data.NameLabel.TextSize = 14; data.NameLabel.Text = player.Name; data.NameLabel.BackgroundTransparency = 1; local ns = data.NameLabel:Clone(); ns.Name = "NameShadow"; ns.TextColor3 = Color3.new(0,0,0); ns.TextTransparency = 0.5; ns.ZIndex = data.NameLabel.ZIndex - 1; ns.Parent = data.NameTag; print(dbg_prefix.."Created NameTag") end; data.NameTag.StudsOffset = Vector3.new(0, tagYOffset, 0); data.NameLabel.TextColor3 = espColor; data.NameTag.Enabled = true end); if not s then warn(dbg_prefix.."Err NameTag:",e) end; tagYOffset += 0.5
-            elseif data.NameTag then data.NameTag.Enabled = false end
-            -- Salud
-            if settings.espShowHealth then
-                local s,e=pcall(function() if not data.HealthTag then data.HealthTag = Instance.new("BillboardGui", espFolder); data.HealthTag.Name = "HealthTag"; data.HealthTag.Adornee = rootPart; data.HealthTag.Size = UDim2.new(0, 60, 0, 12); data.HealthTag.AlwaysOnTop = true; data.HealthTag.LightInfluence = 0; local hbbg = Instance.new("Frame", data.HealthTag); hbbg.Size = UDim2.new(1,0,0,4); hbbg.Position = UDim2.new(0,0,1,-4); hbbg.BackgroundColor3 = Color3.fromRGB(80,0,0); hbbg.BorderSizePixel = 0; data.HealthBarFill = Instance.new("Frame", hbbg); data.HealthBarFill.Size = UDim2.new(1,0,1,0); data.HealthBarFill.BackgroundColor3 = Color3.fromRGB(0,255,0); data.HealthBarFill.BorderSizePixel = 0; data.HealthLabel = Instance.new("TextLabel", data.HealthTag); data.HealthLabel.Size = UDim2.new(1,0,1,-4); data.HealthLabel.Font = Enum.Font.SourceSans; data.HealthLabel.TextSize = 10; data.HealthLabel.BackgroundTransparency = 1; data.HealthLabel.TextYAlignment = Enum.TextYAlignment.Top; local hs = data.HealthLabel:Clone(); hs.Name = "HealthShadow"; hs.TextColor3 = Color3.new(0,0,0); hs.TextTransparency = 0.5; hs.ZIndex = data.HealthLabel.ZIndex - 1; hs.Parent = data.HealthTag; print(dbg_prefix.."Created HealthTag") end; data.HealthTag.StudsOffset = Vector3.new(0, tagYOffset, 0); local maxH = humanoid.MaxHealth; if maxH <= 0 then maxH = 100 end; local curH = humanoid.Health; local hp = math.clamp(curH / maxH, 0, 1); local hc = Color3.fromHSV(hp * 0.33, 1, 1); data.HealthLabel.Text = string.format("%d/%d", math.floor(curH), math.floor(maxH)); data.HealthLabel.TextColor3 = hc; data.HealthBarFill.Size = UDim2.new(hp, 0, 1, 0); data.HealthBarFill.BackgroundColor3 = hc; data.HealthTag.Enabled = true end); if not s then warn(dbg_prefix.."Err HealthTag:",e) end; tagYOffset += 0.3
-            elseif data.HealthTag then data.HealthTag.Enabled = false end
-            -- Distancia
-            if settings.espShowDistance then
-                local s,e=pcall(function() if not data.DistanceTag then data.DistanceTag = Instance.new("BillboardGui", espFolder); data.DistanceTag.Name = "DistanceTag"; data.DistanceTag.Adornee = rootPart; data.DistanceTag.Size = UDim2.new(0, 100, 0, 15); data.DistanceTag.AlwaysOnTop = true; data.DistanceTag.LightInfluence = 0; data.DistanceLabel = Instance.new("TextLabel", data.DistanceTag); data.DistanceLabel.Size = UDim2.new(1,0,1,0); data.DistanceLabel.Font = Enum.Font.SourceSansLight; data.DistanceLabel.TextSize = 11; data.DistanceLabel.TextColor3 = Color3.fromRGB(200, 200, 200); data.DistanceLabel.BackgroundTransparency = 1; local ds = data.DistanceLabel:Clone(); ds.Name = "DistShadow"; ds.TextColor3 = Color3.new(0,0,0); ds.TextTransparency = 0.5; ds.ZIndex = data.DistanceLabel.ZIndex - 1; ds.Parent = data.DistanceTag; print(dbg_prefix.."Created DistanceTag") end; data.DistanceTag.StudsOffset = Vector3.new(0, tagYOffset, 0); data.DistanceTag.Enabled = true end); if not s then warn(dbg_prefix.."Err DistanceTag:",e) end
-            elseif data.DistanceTag then data.DistanceTag.Enabled = false end
-
-        end)
-        if not updateSuccess then
-            warn(dbg_prefix.."ERROR GENERAL - ", updateError)
-            cleanupPlayerESP(player) -- Limpia si hubo un error grave actualizando
         end
     end
-    local function updateAllEsp() print("Enhanced Toolkit: Updating all ESP..."); local players = Players:GetPlayers(); for _, player in ipairs(players) do updateEspForPlayer(player) end; for player, data in pairs(espInstances) do local exists = false; for _, p in ipairs(players) do if p == player then exists = true; break end end; if not exists then cleanupPlayerESP(player) end end end
-    print("Enhanced Toolkit: Funciones ESP definidas.")
 
-    -- =============================================================================
-    -- Lógica Aimbot, Fly (NUEVO), Speed
-    -- =============================================================================
-    -- --- Aimbot ---
-    local function getNearestTarget() -- Añadir prints internos para debug
-        local dbg_prefix = "Aimbot_GetTarget: "
-        --print(dbg_prefix.."Running check...") -- Muy spammy
-        local success, result = pcall(function()
-            local mousePos = UserInputService:GetMouseLocation()
-            local closestPlayer = nil; local closestPartInstance = nil
-            local shortestScreenDist = settings.aimRadius
-
-            for _, targetPlayer in pairs(Players:GetPlayers()) do
-                if targetPlayer ~= localPlayer and targetPlayer.Character then
-                     local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-                     local rootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                     if humanoid and humanoid.Health > 0 and rootPart then
-                        local rootPosScreen, onScreenRoot = Camera:WorldToViewportPoint(rootPart.Position)
-                        if not onScreenRoot then --print(dbg_prefix..targetPlayer.Name.." Root not on screen")
-                             continue
-                        end
-                        local rootScreenDist = (Vector2.new(rootPosScreen.X, rootPosScreen.Y) - mousePos).Magnitude
-                        if rootScreenDist > settings.aimRadius then --print(dbg_prefix..targetPlayer.Name.." Root outside FOV:", rootScreenDist)
-                             continue
-                        end
-                        --print(dbg_prefix..targetPlayer.Name.." Root IN FOV:", rootScreenDist)
-
-                        if settings.aimPart ~= "Nearest" then
-                            local specificPart = targetPlayer.Character:FindFirstChild(settings.aimPart)
-                            if specificPart then
-                                local isVis = isPositionVisible(specificPart.Position, false) -- false = usa aimbotWallcheck
-                                --print(dbg_prefix..targetPlayer.Name.." checking "..settings.aimPart..". Visible:", isVis)
-                                if isVis then
-                                    local screenPoint, onScreenPart = Camera:WorldToViewportPoint(specificPart.Position)
-                                    if onScreenPart then
-                                        local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
-                                        if distance < shortestScreenDist then
-                                            --print(dbg_prefix.."NEW BEST (Specific):", targetPlayer.Name, settings.aimPart, distance)
-                                            shortestScreenDist = distance; closestPlayer = targetPlayer; closestPartInstance = specificPart
-                                        end
-                                    end
-                                end
-                            end
-                        else -- Nearest Mode
-                            local currentClosestPartForPlayer = nil; local currentShortestDistForPlayer = shortestScreenDist
-                            for _, partName in ipairs(aimbotNearestParts) do
-                                local candidatePart = targetPlayer.Character:FindFirstChild(partName)
-                                if candidatePart then
-                                     local isVis = isPositionVisible(candidatePart.Position, false)
-                                     --print(dbg_prefix..targetPlayer.Name.." checking Nearest part "..partName..". Visible:", isVis)
-                                     if isVis then
-                                         local screenPoint, onScreenPart = Camera:WorldToViewportPoint(candidatePart.Position)
-                                         if onScreenPart then
-                                             local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
-                                             if distance < currentShortestDistForPlayer then
-                                                 currentShortestDistForPlayer = distance; currentClosestPartForPlayer = candidatePart
-                                             end
-                                         end
-                                     end
-                                end
-                            end
-                            if currentClosestPartForPlayer and currentShortestDistForPlayer < shortestScreenDist then
-                                 --print(dbg_prefix.."NEW BEST (Nearest):", targetPlayer.Name, currentClosestPartForPlayer.Name, currentShortestDistForPlayer)
-                                 shortestScreenDist = currentShortestDistForPlayer; closestPlayer = targetPlayer; closestPartInstance = currentClosestPartForPlayer
-                            end
-                        end
-                     end
-                end
-            end
-            --if closestPlayer then print(dbg_prefix.."FINAL TARGET:", closestPlayer.Name, closestPartInstance and closestPartInstance.Name or "None", shortestScreenDist) else print(dbg_prefix.."No target found.") end
-            return closestPlayer, closestPartInstance
-        end)
-        if not success then warn("Error en getNearestTarget:", result); return nil, nil else return unpack(result or {nil, nil}) end
-    end
-
-    -- --- Fly (NUEVO - BodyVelocity) ---
-    local flyBodyVelocity = nil -- Referencia al BodyVelocity
-    local function updateFlyState()
-        local success,err = pcall(function()
-            local character = localPlayer.Character
-            if settings.flyEnabled and character then
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if rootPart and humanoid then
-                    print("Enhanced Toolkit: Activando Fly (BodyVelocity)")
-                    humanoid:ChangeState(Enum.HumanoidStateType.Physics) -- Estado crucial
-
-                    if not flyBodyVelocity or not flyBodyVelocity.Parent then
-                        flyBodyVelocity = Instance.new("BodyVelocity")
-                        flyBodyVelocity.Name = "CustomFlyBodyVelocity"
-                        flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge) -- Fuerza infinita para control total
-                        flyBodyVelocity.P = 5000 -- Rigidez (puede necesitar ajuste)
-                        flyBodyVelocity.Velocity = Vector3.new(0,0,0) -- Velocidad inicial cero
-                        flyBodyVelocity.Parent = rootPart
-                        print("Enhanced Toolkit: BodyVelocity Creado.")
-                    end
-                    flyBodyVelocity.Velocity = rootPart.AssemblyLinearVelocity -- Empieza con la velocidad actual para evitar tirones
-                else
-                    settings.flyEnabled = false -- Falla si no hay partes
-                    warn("Enhanced Toolkit: Fly desactivado por falta de Character/Root/Humanoid.")
-                end
-            else -- Desactivando Fly
-                if flyBodyVelocity and flyBodyVelocity.Parent then
-                    print("Enhanced Toolkit: Desactivando Fly (Destruyendo BodyVelocity)")
-                    flyBodyVelocity:Destroy()
-                    flyBodyVelocity = nil
-                end
-                if character then
-                    local humanoid = character:FindFirstChildOfClass("Humanoid")
-                    if humanoid and humanoid:GetState() == Enum.HumanoidStateType.Physics then
-                        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    end
-                end
-            end
-            -- Actualizar UI
-            local flyToggle = miscTabFrame and miscTabFrame:FindFirstChild("flyEnabledToggle")
-            if flyToggle then flyToggle.Text = "Fly (Key: " .. (settings.flyKeybind and settings.flyKeybind.Name or "N/A") .. "): " .. (settings.flyEnabled and "ON" or "OFF"); flyToggle.BackgroundColor3 = settings.flyEnabled and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0) end
-        end)
-        if not success then warn("Error en updateFlyState:", err) end
-    end
-
-    -- --- Speed (Sin cambios lógicos) ---
-    local originalWalkSpeed = 16; local originalJumpPower = 50;
-    local function updateSpeedState() local success,err=pcall(function() local character = localPlayer.Character; if character then local humanoid = character:FindFirstChildOfClass("Humanoid"); if humanoid then if settings.speedEnabled then if humanoid.WalkSpeed == originalWalkSpeed then originalWalkSpeed = humanoid.WalkSpeed end; humanoid.WalkSpeed = originalWalkSpeed * settings.speedMultiplier; else humanoid.WalkSpeed = originalWalkSpeed; end end end; local speedToggle = miscTabFrame and miscTabFrame:FindFirstChild("speedEnabledToggle"); if speedToggle then speedToggle.Text = "Speed (Key: " .. (settings.speedKeybind and settings.speedKeybind.Name or "N/A") .. "): " .. (settings.speedEnabled and "ON" or "OFF"); speedToggle.BackgroundColor3 = settings.speedEnabled and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0) end end); if not success then warn("Error en updateSpeedState:",err) end end
-    print("Enhanced Toolkit: Funciones de lógica principal definidas.")
-
-    -- =============================================================================
-    -- Población de Contenido de Pestañas
-    -- =============================================================================
-    print("Enhanced Toolkit: Iniciando población de UI en task.spawn...")
-    task.spawn(function()
-        local success, err = pcall(function()
-            if not aimbotTabFrame or not visualsTabFrame or not miscTabFrame then warn("ERROR: Tab frames nil al poblar UI."); return end
-            -- Aimbot UI
-            createToggle(aimbotTabFrame, { settingKey = "aimbotEnabled", settingName = "Aimbot", layoutOrder = 1 })
-            createKeybindSetter(aimbotTabFrame, { settingKey = "aimbotToggleKeybind", settingName = "Toggle Key", layoutOrder = 2 })
-            createDropdown(aimbotTabFrame, { settingKey = "aimPart", settingName = "Aim Part", options = {"Nearest", "Head", "UpperTorso", "HumanoidRootPart", "LowerTorso"}, layoutOrder = 3 })
-            createSlider(aimbotTabFrame, { settingKey = "smoothness", settingName = "Smoothness", min = 0.01, max = 0.99, format = "%.2f", layoutOrder = 4 })
-            createSlider(aimbotTabFrame, { settingKey = "aimRadius", settingName = "FOV Radius", min = 10, max = 500, format = "%.0f", layoutOrder = 5, updateCallback = function() if fovCircle then fovCircle.Size = UDim2.new(0, settings.aimRadius * 2, 0, settings.aimRadius * 2) end end})
-            createCheckbox(aimbotTabFrame, { settingKey = "aimbotFOVVisible", settingName = "Show FOV Circle", layoutOrder = 6 })
-            createCheckbox(aimbotTabFrame, { settingKey = "aimbotFOVRainbow", settingName = "Rainbow FOV", layoutOrder = 7 })
-            createCheckbox(aimbotTabFrame, { settingKey = "aimbotWallcheck", settingName = "Aimbot Wallcheck", layoutOrder = 8 })
-            -- Visuals UI
-            createToggle(visualsTabFrame, { settingKey = "espEnabled", settingName = "ESP", layoutOrder = 1, updateCallback = updateAllEsp })
-            createDropdown(visualsTabFrame, { settingKey = "espTeamCheck", settingName = "Team Filter", options = {"All", "Enemies", "Allies"}, layoutOrder = 2, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espVisibleOnly", settingName = "Visible Only (Wallcheck)", layoutOrder = 3, updateCallback = updateAllEsp })
-            createTextInput(visualsTabFrame, { settingKey = "espMaxDistance", settingName = "Max Distance (0=inf)", valueType = "number", min = 0, max = 5000, layoutOrder = 4, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowBoxes", settingName = "Show Boxes", layoutOrder = 10, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowCorners", settingName = "Show Corners", layoutOrder = 11, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowSkeleton", settingName = "Show Skeleton", layoutOrder = 12, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowHighlight", settingName = "Show Highlight", layoutOrder = 13, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowTracers", settingName = "Show Tracers", layoutOrder = 14, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowNames", settingName = "Show Names", layoutOrder = 20, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowHealth", settingName = "Show Health", layoutOrder = 21, updateCallback = updateAllEsp })
-            createCheckbox(visualsTabFrame, { settingKey = "espShowDistance", settingName = "Show Distance", layoutOrder = 22, updateCallback = updateAllEsp })
-            createColorPreview(visualsTabFrame, { settingKey = "espEnemyColor", settingName = "Enemy Color", layoutOrder = 30, updateCallback = updateAllEsp })
-            createColorPreview(visualsTabFrame, { settingKey = "espAllyColor", settingName = "Ally Color", layoutOrder = 31, updateCallback = updateAllEsp })
-            -- Misc UI
-            createToggle(miscTabFrame, { settingKey = "flyEnabled", settingName = "Fly (Key: " .. (settings.flyKeybind and settings.flyKeybind.Name or "N/A") .. ")", layoutOrder = 1, updateCallback = updateFlyState })
-            createTextInput(miscTabFrame, { settingKey = "flySpeed", settingName = "Fly Speed", valueType = "number", min = 1, max = 500, layoutOrder = 2 })
-            createToggle(miscTabFrame, { settingKey = "speedEnabled", settingName = "Speed (Key: " .. (settings.speedKeybind and settings.speedKeybind.Name or "N/A") .. ")", layoutOrder = 3, updateCallback = updateSpeedState })
-            createTextInput(miscTabFrame, { settingKey = "speedMultiplier", settingName = "Speed Multiplier", valueType = "number", min = 1, max = 10, layoutOrder = 4 })
-
-            switchTab("Aimbot")
-            print("Enhanced Toolkit: Población de UI completada.")
-        end)
-        if not success then warn("Enhanced Toolkit: ERROR FATAL al poblar UI en task.spawn - ", err) end
-    end)
-
-    -- =============================================================================
-    -- Lógica de Interacción del HUB (Dragging, Close, Minimize)
-    -- =============================================================================
-    -- ... (Conexiones con pcall interno igual que v4.1) ...
-    local dragging = false; local dragStart = nil; local startPos = nil; local s1,e1=pcall(function() titleBar.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = input.Position; startPos = mainFrame.Position; end end) end); if not s1 then warn("Err Drag1:",e1) end; local s2,e2=pcall(function() titleBar.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false; end end) end); if not s2 then warn("Err Drag2:",e2) end; local s3,e3=pcall(function() UserInputService.InputChanged:Connect(function(input) if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local delta = input.Position - dragStart; mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end) end); if not s3 then warn("Err Drag3:",e3) end; local s4,e4=pcall(function() closeButton.MouseButton1Click:Connect(function() screenGui:Destroy() end) end); if not s4 then warn("Err Close:",e4) end; local s5,e5=pcall(function() minimizeButton.MouseButton1Click:Connect(function() settings.hubMinimized = not settings.hubMinimized; local targetSizeY = settings.hubMinimized and titleBar.AbsoluteSize.Y or 450; local targetSize = UDim2.new(mainFrame.Size.X.Scale, mainFrame.Size.X.Offset, 0, targetSizeY); local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out); local sizeTween = TweenService:Create(mainFrame, tweenInfo, { Size = targetSize }); sizeTween:Play(); contentFrame.Visible = not settings.hubMinimized; minimizeButton.Text = settings.hubMinimized and "+" or "-" end) end); if not s5 then warn("Err Minimize:",e5) end
-    print("Enhanced Toolkit: Interacción del HUB conectada.")
-
-    -- =============================================================================
-    -- Bucles Principales (RenderStepped, Heartbeat)
-    -- =============================================================================
-    print("Enhanced Toolkit: Conectando bucles de actualización...")
-    local renderSteppedConnection = nil
-    renderSteppedConnection = RunService.RenderStepped:Connect(function(deltaTime)
-        local success, err = pcall(function()
-            local mousePos = UserInputService:GetMouseLocation()
-            -- --- FOV Aimbot ---
-            if fovCircle and fovCircle.Parent then -- Check if exists
-                local fovShouldBeVisible = settings.aimbotEnabled and settings.aimbotFOVVisible; if fovCircle.Visible ~= fovShouldBeVisible then fovCircle.Visible = fovShouldBeVisible end; if fovShouldBeVisible then fovCircle.Position = UDim2.fromOffset(mousePos.X, mousePos.Y); local td = settings.aimRadius * 2; if fovCircle.Size.X.Offset ~= td then fovCircle.Size = UDim2.new(0, td, 0, td) end; if settings.aimbotFOVRainbow then currentFovHue = (currentFovHue + deltaTime * 0.5) % 1; fovCircle.BorderColor3 = Color3.fromHSV(currentFovHue, 1, 1) else if fovCircle.BorderColor3 ~= Color3.fromRGB(255, 255, 255) then fovCircle.BorderColor3 = Color3.fromRGB(255, 255, 255) end end end
-            end
-            -- --- Aimbot ---
-            if settings.aimbotEnabled then
-                local targetPlayer, targetPart = getNearestTarget()
-                if targetPlayer and targetPart then
-                    --print("Aimbot Aiming at:", targetPlayer.Name, targetPart.Name) -- Debug Print
-                    local targetPosition = targetPart.Position
-                    local newCFrame = CFrame.new(Camera.CFrame.Position, targetPosition)
-                    local smoothFactor = math.clamp(1 - settings.smoothness, 0.01, 0.99)
-                    Camera.CFrame = Camera.CFrame:Lerp(newCFrame, smoothFactor)
-                --else
-                    --print("Aimbot: No target found/valid.") -- Debug Print
-                end
-            end
-             -- --- ESP Updates ---
-             if settings.espEnabled then
-                 local playerRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart"); local playerPos = playerRoot and playerRoot.Position
-                 if settings.espShowTracers then if not tracerHandle1 or not tracerHandle1.Parent then if screenGui and screenGui.Parent then tracerHandle1 = Instance.new("Attachment", screenGui); tracerHandle1.Name = "TracerHandle1" end end; if tracerHandle1 and Camera then local vs = Camera.ViewportSize; local sbc = Vector2.new(vs.X / 2, vs.Y - 10); local ur = Camera:ScreenPointToRay(sbc.X, sbc.Y); tracerHandle1.WorldPosition = ur.Origin + ur.Direction * 1 end elseif tracerHandle1 and tracerHandle1.Parent then pcall(tracerHandle1.Destroy, tracerHandle1); tracerHandle1 = nil end
-                 if playerPos then
-                     for player, data in pairs(espInstances) do
-                         if data and data.Folder and data.Folder.Parent then
-                             -- Update Distance
-                             if settings.espShowDistance and data.DistanceLabel then local targetRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); if targetRoot then local dist = (playerPos - targetRoot.Position).Magnitude; data.DistanceLabel.Text = string.format("[%.fm]", dist) end end
-                             -- Update Skeleton
-                             if settings.espShowSkeleton and data.SkeletonLines then local character = player.Character; if character then for _, line in pairs(data.SkeletonLines) do local p1, p2 = line.Handle1, line.Handle2; if p1 and p2 and p1.Parent == character and p2.Parent == character then line.Length = (p1.Position - p2.Position).Magnitude; line.Visible = true else line.Visible = false end end end end
-                             -- Update Tracer Handle1
-                             if settings.espShowTracers and data.Tracer and tracerHandle1 then data.Tracer.Handle1 = tracerHandle1; data.Tracer.Visible = true elseif data.Tracer then data.Tracer.Visible = false end
-                         end
-                     end
-                 end
-             else -- Cleanup if ESP disabled
-                 if next(espInstances) then for player, _ in pairs(espInstances) do cleanupPlayerESP(player) end end
-                 if tracerHandle1 and tracerHandle1.Parent then pcall(tracerHandle1.Destroy, tracerHandle1); tracerHandle1 = nil end
-             end
-        end)
-        if not success then warn("Enhanced Toolkit: ERROR en RenderStepped - ", err); if renderSteppedConnection then renderSteppedConnection:Disconnect(); print("RenderStepped Desconectado.") end end
-    end)
-
-    local heartbeatConnection = nil
-    heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
-        local success, err = pcall(function()
-             -- Fly Logic (BodyVelocity)
-             if settings.flyEnabled and flyBodyVelocity and flyBodyVelocity.Parent then
-                 local moveDirection = Vector3.new(0, 0, 0); if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Camera.CFrame.LookVector end; if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - Camera.CFrame.LookVector end; if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - Camera.CFrame.RightVector end; if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Camera.CFrame.RightVector end; if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end; if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
-                 local targetVelocity = (moveDirection.Magnitude > 0) and moveDirection.Unit * settings.flySpeed or Vector3.new(0,0,0)
-                 flyBodyVelocity.Velocity = targetVelocity -- Establece directamente la velocidad deseada
-             end
-        end)
-        if not success then warn("Enhanced Toolkit: ERROR en Heartbeat - ", err); if heartbeatConnection then heartbeatConnection:Disconnect(); print("Heartbeat Desconectado.") end end
-    end)
-    print("Enhanced Toolkit: Bucles de actualización conectados.")
-
-    -- =============================================================================
-    -- Manejo de Teclas de Acceso Rápido
-    -- =============================================================================
-    local inputBeganConnection = nil
-    inputBeganConnection = UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-        local success, err = pcall(function()
-             if isBindingKey then if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then local nkInput=input.UserInputType; local nkName=input.UserInputType.Name; if input.UserInputType == Enum.UserInputType.Keyboard then nkInput=input.KeyCode; nkName=input.KeyCode.Name end; if nkInput == Enum.KeyCode.Escape then settings[keybindSettingKey]=previousKeybind; keybindButtonReference.Text=keybindButtonReference.Text:gsub("%[.+%]", "[" .. previousKeybind.Name .. "]"); keybindButtonReference.BackgroundColor3=Color3.fromRGB(60,60,60); showNotification("Keybind cancelled.",Color3.fromRGB(200,100,0)) else settings[keybindSettingKey]=nkInput; keybindButtonReference.Text=keybindButtonReference.Text:gsub("%[.+%]", "[" .. nkName .. "]"); keybindButtonReference.BackgroundColor3=Color3.fromRGB(0,180,0); showNotification("Keybind set to "..nkName,Color3.fromRGB(0,180,0)); task.wait(0.3); keybindButtonReference.BackgroundColor3=Color3.fromRGB(60,60,60) end; isBindingKey=false; keybindButtonReference=nil; keybindSettingKey=nil; previousKeybind=nil; return end end
-             if gameProcessedEvent and not isBindingKey then return end
-             if (input.UserInputType == settings.aimbotToggleKeybind or input.KeyCode == settings.aimbotToggleKeybind) then settings.aimbotEnabled = not settings.aimbotEnabled; local aimbotToggle=aimbotTabFrame and aimbotTabFrame:FindFirstChild("aimbotEnabledToggle"); if aimbotToggle then aimbotToggle.Text="Aimbot: " .. (settings.aimbotEnabled and "ON" or "OFF"); aimbotToggle.BackgroundColor3=settings.aimbotEnabled and Color3.fromRGB(0,180,0) or Color3.fromRGB(180,0,0) end end
-             if input.KeyCode == settings.flyKeybind then settings.flyEnabled = not settings.flyEnabled; updateFlyState(); local flyToggle=miscTabFrame and miscTabFrame:FindFirstChild("flyEnabledToggle"); showNotification("Fly " .. (settings.flyEnabled and "Enabled" or "Disabled"), flyToggle and flyToggle.BackgroundColor3 or Color3.new(0,0,0)) end
-             if input.KeyCode == settings.speedKeybind then settings.speedEnabled = not settings.speedEnabled; updateSpeedState(); local speedToggle=miscTabFrame and miscTabFrame:FindFirstChild("speedEnabledToggle"); showNotification("Speed " .. (settings.speedEnabled and "Enabled" or "Disabled"), speedToggle and speedToggle.BackgroundColor3 or Color3.new(0,0,0)) end
-        end)
-        if not success then warn("Enhanced Toolkit: ERROR en InputBegan - ", err); if inputBeganConnection then inputBeganConnection:Disconnect(); print("InputBegan Desconectado.") end end
-    end)
-    print("Enhanced Toolkit: Manejo de Input conectado.")
-
-    -- =============================================================================
-    -- Escuchas de Eventos de Jugadores
-    -- =============================================================================
-    local playerAddedConn = nil; local playerRemovingConn = nil
-    playerAddedConn = Players.PlayerAdded:Connect(function(player) local succ, err = pcall(function() local charAddedConn=nil; charAddedConn=player.CharacterAdded:Connect(function(character) local s,e=pcall(function() task.wait(0.5); updateEspForPlayer(player); local humanoid=character:FindFirstChildOfClass("Humanoid"); if humanoid then originalWalkSpeed=humanoid.WalkSpeed; originalJumpPower=humanoid.JumpPower; if settings.speedEnabled then updateSpeedState() end end end); if not s then warn("Err CharAdded:",e) end end); if player.Character then local s,e=pcall(function() task.wait(0.5); updateEspForPlayer(player); local humanoid=player.Character:FindFirstChildOfClass("Humanoid"); if humanoid then originalWalkSpeed=humanoid.WalkSpeed; originalJumpPower=humanoid.JumpPower; if settings.speedEnabled then updateSpeedState() end end end); if not s then warn("Err CharAdded Init:",e) end end end); if not succ then warn("Err PlayerAdded:",err) end end)
-    playerRemovingConn = Players.PlayerRemoving:Connect(function(player) local succ, err = pcall(function() cleanupPlayerESP(player) end); if not succ then warn("Error PlayerRemoving:", err) end end)
-    print("Enhanced Toolkit: Escuchas de Jugadores conectados.")
-
-    -- =============================================================================
-    -- Inicialización y Limpieza Final
-    -- =============================================================================
-    task.wait(1)
-    local successInit, errInit = pcall(function() updateAllEsp(); updateSpeedState(); updateFlyState(); end)
-    if not successInit then warn("Enhanced Toolkit: ERROR inicializando estados - ", errInit) end
-
-    print("Enhanced Toolkit v4.2 Loaded Successfully!")
-    showNotification("Enhanced Toolkit v4.2 Loaded!", Color3.fromRGB(0, 150, 255))
-
-    screenGui.Destroying:Connect(function()
-         print("Enhanced Toolkit Cleaning Up...")
-         local successClean, errClean = pcall(function() settings.flyEnabled = false; settings.speedEnabled = false; updateFlyState(); updateSpeedState(); settings.espEnabled = false; updateAllEsp(); if fovCircle and fovCircle.Parent then fovCircle:Destroy() end; if tracerHandle1 and tracerHandle1.Parent then tracerHandle1:Destroy() end; if renderSteppedConnection then renderSteppedConnection:Disconnect(); renderSteppedConnection = nil end; if heartbeatConnection then heartbeatConnection:Disconnect(); heartbeatConnection = nil end; if inputBeganConnection then inputBeganConnection:Disconnect(); inputBeganConnection = nil end; if playerAddedConn then playerAddedConn:Disconnect(); playerAddedConn = nil end; if playerRemovingConn then playerRemovingConn:Disconnect(); playerRemovingConn = nil end; print("Enhanced Toolkit: Conexiones desconectadas.") end)
-         if not successClean then warn("Error durante la limpieza:", errClean) end
-         print("Enhanced Toolkit Cleanup Complete.")
-    end)
-    print("Enhanced Toolkit: Fin de la ejecución inicial.")
-
-end) -- Fin del pcall global inicial
-
-if not mainSuccess then
-    warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    warn("Enhanced Toolkit: ERROR CRÍTICO IRRECUPERABLE AL INICIO:")
-    warn(mainError)
-    warn("El script no pudo cargarse. Verifica errores de sintaxis o problemas del executor.")
-    warn("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    return closestPlayer
 end
+
+-- Lógica del Aimbot
+game:GetService("RunService").RenderStepped:Connect(function()
+    if getgenv().AimlockEnabled then
+        local target = getNearestTarget()
+        if target and target.Character and target.Character:FindFirstChild(getgenv().AimPart) then
+            local targetPosition = target.Character[getgenv().AimPart].Position
+            local camera = workspace.CurrentCamera
+            local smoothFactor = getgenv().SmoothnessAmount
+
+            -- Interpolación suave hacia el objetivo
+            camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetPosition), smoothFactor)
+        end
+    end
+end)
+
+-- Mantener la UI visible incluso cuando el jugador muera
+player.CharacterAdded:Connect(function(character)
+    if screenGui.Parent == nil then
+        screenGui.Parent = playerGui
+    end
+end)
